@@ -198,7 +198,7 @@ export const getAvailableMoves = (
     coordinate: [number, number],
     checkCheck: boolean = false,
     onlyCheck: boolean = false
-): [number, number][] => {
+) => {
     if (board[coordinate[0]][coordinate[1]] === null || board[coordinate[0]][coordinate[1]]!.player !== player) {
         return [];
     }
@@ -387,11 +387,25 @@ export const getAvailableMoves = (
         case "香":
             if (player === "black") {
                 for (let i = coordinate[0] - 1; i >= 0; i--) {
-                    availableMoves.push([i, coordinate[1]]);
+                    if (board[i][coordinate[1]] === null) {
+                        availableMoves.push([i, coordinate[1]]);
+                    } else {
+                        if (board[i][coordinate[1]]?.player !== player) {
+                            availableMoves.push([i, coordinate[1]]);
+                        }
+                        break;
+                    }
                 }
             } else {
                 for (let i = coordinate[0] + 1; i <= 8; i++) {
-                    availableMoves.push([i, coordinate[1]]);
+                    if (board[i][coordinate[1]] === null) {
+                        availableMoves.push([i, coordinate[1]]);
+                    } else {
+                        if (board[i][coordinate[1]]?.player !== player) {
+                            availableMoves.push([i, coordinate[1]]);
+                        }
+                        break;
+                    }
                 }
             }
             break;
@@ -419,7 +433,7 @@ export const getAvailableMoves = (
 
             if (checkCheck === true) {
                 const gameBoard = copyBoard(board);
-                const movingPiece = { type, player };
+                const movingPiece = { type: type.type, player };
                 gameBoard[coordinate[0]][coordinate[1]] = null;
                 gameBoard[y][x] = movingPiece;
                 const oppo = player === "black" ? "white" : "black";
@@ -435,8 +449,7 @@ export const getAvailableMoves = (
                 }
                 return true;
             }
-        })
-        .map((e) => e.coordinate);
+        });
 };
 
 export const getAvailablePuts = (
@@ -475,7 +488,7 @@ export const isCheck = (board: Board, turnPlayer: Player, recursive: boolean = t
         for (let j = 0; j < 9; j++) {
             if (board[i][j] !== null && board[i][j]!.player === turnPlayer) {
                 const moves = getAvailableMoves(board, turnPlayer, [i, j], recursive);
-                for (const [y, x] of moves) {
+                for (const [y, x] of moves.map((e) => e.coordinate)) {
                     nullBoard[y][x] = { type: "玉", player: turnPlayer };
                 }
             }
@@ -503,37 +516,27 @@ export const solveTsumeshogi = (
     hand: Hand,
     maxDepth: number,
     currentDepth: number = 0
-): History | false => {
+): History[] | false => {
     const availableHand = Object.entries(hand[turnPlayer])
         .filter((e) => e[1] > 0)
         .map(([key]) => key) as HandPieceType[];
+    const actions = getAvailableActions(board, turnPlayer, hand, turnPlayer === "black");
 
     if (turnPlayer === "white" && isCheckMate(board, turnPlayer, availableHand)) {
-        return [];
+        console.log("checkMate!");
+        printBoard(board);
+        return [[{ from: [-1, -1], to: [-1, -1], pieceType: "玉" }]];
     }
     if (currentDepth > maxDepth) {
         return false;
     }
+    console.log(currentDepth);
+    printBoard(board);
 
-    const actions = getAvailableActions(board, turnPlayer, hand, turnPlayer === "black");
-    let next: History | false = false;
-    let lastHistory: Action[] | null = null;
-    if (currentDepth === 1 && board[0][8]?.type === "飛") {
-        console.log("================");
-        printBoard(board);
-        console.log(hand);
-    }
-    if (currentDepth === 2 && board[0][8]?.type === "玉" && hand.black.飛 === 1) {
-        console.log("================");
-        printBoard(board);
-        console.log(hand);
-        console.log(actions);
-    }
-    if (currentDepth === 3 && board[0][7]?.type === "と" && hand.black.飛 === 1) {
-        console.log("================");
-        printBoard(board);
-        console.log(hand);
-    }
+    console.log(actions);
+
+    let next: History[] | false = false;
+    let lastHistory: History[] | null = null;
 
     for (const action of actions) {
         const newBoard = copyBoard(board);
@@ -568,7 +571,7 @@ export const solveTsumeshogi = (
             newBoard[action.from[0]][action.from[1]] = null;
             if (newBoard[action.to[0]][action.to[1]] !== null) {
                 const type = newBoard[action.to[0]][action.to[1]]!.type;
-                newHand[turnPlayer][type as HandPieceType] += 1;
+                newHand[turnPlayer][originMap[type] as HandPieceType] += 1;
             }
             newBoard[action.to[0]][action.to[1]] = { type: action.pieceType, player: turnPlayer };
         }
@@ -579,21 +582,40 @@ export const solveTsumeshogi = (
         if (turnPlayer === "black") {
             next = solveTsumeshogi(newBoard, "white", newHand, maxDepth, currentDepth + 1);
             if (next !== false) {
-                return [action, ...next];
+                if (lastHistory === null) {
+                    lastHistory = [];
+                }
+                const newHistory = next.map((e) => [action, ...e]) as History[];
+                lastHistory = [...lastHistory, ...newHistory];
             }
         } else {
             next = solveTsumeshogi(newBoard, "black", newHand, maxDepth, currentDepth + 1);
+
             if (next === false) {
+                console.log("falseddddddddddd");
+                console.log(action);
+                printBoard(board);
                 return false;
             }
-            lastHistory = [action, ...next];
+            if (lastHistory === null) {
+                lastHistory = [];
+            }
+            const newHistory = next.map((e) => [action, ...e]) as History[];
+            lastHistory = [...lastHistory, ...newHistory];
         }
     }
-    if (next === false || lastHistory === null) return false;
-    return turnPlayer === "black" ? false : lastHistory;
+    console.log("lastHistory---");
+    console.log(lastHistory);
+    if (lastHistory === null) return false;
+    return lastHistory;
 };
 
-export type Action = { from: [number, number] | "hand"; to: [number, number]; pieceType: PieceType };
+export type Action = {
+    from: [number, number] | "hand";
+    to: [number, number];
+    pieceType: PieceType;
+    promoted?: boolean;
+};
 export type History = Action[];
 
 export const getAvailableActions = (board: Board, player: Player, hand: Hand, onlyCheck: boolean = false) => {
@@ -605,15 +627,14 @@ export const getAvailableActions = (board: Board, player: Player, hand: Hand, on
     for (let i = 0; i < 9; i++) {
         for (let j = 0; j < 9; j++) {
             if (board[i][j] !== null && board[i][j]!.player === player) {
-                const moves = getAvailableMoves(board, player, [i, j], true, onlyCheck).flatMap((e) =>
-                    getPromoteOption(board[i][j]!.type, player, e).map((promote) => ({ promote, coordinate: e }))
-                );
+                const moves = getAvailableMoves(board, player, [i, j], true, onlyCheck);
 
                 actions.push(
-                    ...moves.map(({ promote, coordinate }) => ({
+                    ...moves.map(({ type, coordinate }) => ({
                         from: [i, j] as [number, number],
                         to: coordinate as [number, number],
-                        pieceType: promote,
+                        pieceType: type.type,
+                        promoted: type.promoted,
                     }))
                 );
             }
@@ -648,66 +669,173 @@ export const PIECE_NAMES: { type: PieceType; promoted?: boolean }[] = [
     { type: "成香", promoted: true },
     { type: "と", promoted: true },
 ];
-export const piecePromotedMap = PIECE_NAMES.reduce((prev, cur) => ({ ...prev, [cur.type]: cur.promoted }));
-
-export const getPromoteOption = (type: PieceType, player: Player, coordinates: [number, number]): PieceType[] => {
+const originMap = {
+    玉: "玉",
+    飛: "飛",
+    角: "角",
+    金: "金",
+    銀: "銀",
+    桂: "桂",
+    香: "香",
+    歩: "歩",
+    竜: "飛",
+    馬: "角",
+    成銀: "銀",
+    成桂: "桂",
+    成香: "香",
+    と: "歩",
+};
+type PieceTypeWithPromoted = { type: PieceType; promoted: boolean };
+export const getPromoteOption = (
+    type: PieceType,
+    player: Player,
+    coordinates: [number, number]
+): PieceTypeWithPromoted[] => {
     switch (type) {
         case "桂":
             if (player === "black" && coordinates[0] === 2) {
-                return ["成桂", "桂"];
+                return [
+                    { type: "成桂", promoted: true },
+                    { type: "桂", promoted: false },
+                ];
             } else if (player === "black" && coordinates[0] <= 1) {
-                return ["成桂"];
+                return [{ type: "成桂", promoted: true }];
             } else if (player === "white" && coordinates[0] === 6) {
-                return ["成桂", "桂"];
-            } else if (player === "black" && coordinates[0] >= 7) {
-                return ["成桂"];
+                return [
+                    { type: "成桂", promoted: true },
+                    { type: "桂", promoted: false },
+                ];
+            } else if (player === "white" && coordinates[0] >= 7) {
+                return [{ type: "成桂", promoted: true }];
+            } else {
+                return [{ type: "桂", promoted: false }];
             }
-            break;
         case "歩":
             if (player === "black" && coordinates[0] === 0) {
-                return ["と"];
+                return [{ type: "と", promoted: true }];
             } else if (player === "black" && coordinates[0] <= 2) {
-                return ["と", "歩"];
+                return [
+                    { type: "と", promoted: true },
+                    { type: "歩", promoted: false },
+                ];
             } else if (player === "white" && coordinates[0] === 8) {
-                return ["と"];
+                return [{ type: "と", promoted: true }];
             } else if (player === "white" && coordinates[0] >= 6) {
-                return ["と", "歩"];
+                return [
+                    { type: "と", promoted: true },
+                    { type: "歩", promoted: false },
+                ];
+            } else {
+                return [{ type: "歩", promoted: false }];
             }
             break;
         case "香":
             if (player === "black" && coordinates[0] === 0) {
-                return ["成香"];
+                return [{ type: "成香", promoted: true }];
             } else if (player === "black" && coordinates[0] <= 2) {
-                return ["成香", "香"];
+                return [
+                    { type: "成香", promoted: true },
+                    { type: "香", promoted: false },
+                ];
             } else if (player === "white" && coordinates[0] === 8) {
-                return ["成香"];
+                return [{ type: "成香", promoted: true }];
             } else if (player === "white" && coordinates[0] >= 6) {
-                return ["成香", "香"];
+                return [
+                    { type: "成香", promoted: true },
+                    { type: "香", promoted: false },
+                ];
+            } else {
+                return [{ type: "香", promoted: false }];
             }
-            break;
         case "角":
             if (player === "black" && coordinates[0] <= 2) {
-                return ["馬", "角"];
+                return [
+                    { type: "馬", promoted: true },
+                    { type: "角", promoted: false },
+                ];
             } else if (player === "white" && coordinates[0] >= 6) {
-                return ["馬", "角"];
+                return [
+                    { type: "馬", promoted: true },
+                    { type: "角", promoted: false },
+                ];
+            } else {
+                return [{ type: "角", promoted: false }];
             }
-            break;
         case "飛":
             if (player === "black" && coordinates[0] <= 2) {
-                return ["竜", "飛"];
+                return [
+                    { type: "竜", promoted: true },
+                    { type: "飛", promoted: false },
+                ];
             } else if (player === "white" && coordinates[0] >= 6) {
-                return ["竜", "飛"];
+                return [
+                    { type: "竜", promoted: true },
+                    { type: "飛", promoted: false },
+                ];
+            } else {
+                return [{ type: "飛", promoted: false }];
             }
+
             break;
         case "銀":
             if (player === "black" && coordinates[0] <= 2) {
-                return ["銀", "成銀"];
+                return [
+                    { type: "成銀", promoted: true },
+                    { type: "銀", promoted: false },
+                ];
             } else if (player === "white" && coordinates[0] >= 6) {
-                return ["銀", "成銀"];
+                return [
+                    { type: "成銀", promoted: true },
+                    { type: "銀", promoted: false },
+                ];
+            } else {
+                return [{ type: "銀", promoted: false }];
             }
-            break;
         default:
-            return [type];
+            return [{ type, promoted: false }];
     }
-    return [];
+};
+
+export const convertKanji = (num: number) => {
+    switch (num) {
+        case 1:
+            return "一";
+        case 2:
+            return "二";
+        case 3:
+            return "三";
+        case 4:
+            return "四";
+        case 5:
+            return "五";
+        case 6:
+            return "六";
+        case 7:
+            return "七";
+        case 8:
+            return "八";
+        case 9:
+            return "九";
+        default:
+            return "エラー";
+    }
+};
+
+export const convertHistoryToSeries = (history: History): string[] => {
+    const res: string[] = [];
+    for (let i = 0; i < history.length; i++) {
+        if (history[i].to[0] < 0) {
+            continue;
+        }
+        if (i != 0 && history[i - 1].to[0] === history[i].to[0] && history[i - 1].to[1] === history[i].to[1]) {
+            res.push(`同${history[i].pieceType}`);
+        } else {
+            res.push(
+                `${9 - history[i].to[1]}${convertKanji(history[i].to[0] + 1)}${
+                    history[i].promoted ? originMap[history[i].pieceType] : history[i].pieceType
+                }${history[i].promoted ? "成" : ""}`
+            );
+        }
+    }
+    return res;
 };
